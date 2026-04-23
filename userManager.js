@@ -11,6 +11,7 @@ function generateDepositAddress() {
 class UserManager {
   constructor() {
     this.users = new Map();
+    this.processedReferralEvents = new Set();
   }
 
   getOrCreate(userId, rawName, referrerId) {
@@ -21,6 +22,7 @@ class UserManager {
         id: userId,
         username: name,
         balance: 10,
+        referralCode: String(userId),
         totalSpent: 0,
         games: 0,
         wins: 0,
@@ -79,16 +81,39 @@ class UserManager {
     user.balance = Math.round((user.balance + prize) * 100) / 100;
   }
 
-  /** Pay 2% referral reward when a referred user plays */
-  payReferralReward(playerId, betAmount) {
-    const player = this.users.get(playerId);
-    if (!player || !player.referredBy) return;
-    const referrer = this.users.get(player.referredBy);
-    if (!referrer) return;
-    const reward = Math.round(betAmount * 0.02 * 100) / 100;
-    if (reward <= 0) return;
-    referrer.balance = Math.round((referrer.balance + reward) * 100) / 100;
-    referrer.referralEarnings = Math.round((referrer.referralEarnings + reward) * 100) / 100;
+  /**
+   * Add deposit and pay fixed referral reward once per deposit event.
+   */
+  applyDeposit(userId, amount, eventId) {
+    const user = this.users.get(userId);
+    if (!user || !Number.isFinite(amount) || amount <= 0) {
+      return { ok: false, reason: 'invalid_amount' };
+    }
+
+    const normalizedEventId = String(eventId || '');
+    if (!normalizedEventId) {
+      return { ok: false, reason: 'invalid_event' };
+    }
+
+    this.addBalance(userId, amount);
+
+    let referralReward = 0;
+    if (user.referredBy && !this.processedReferralEvents.has(normalizedEventId)) {
+      const referrer = this.users.get(user.referredBy);
+      if (referrer) {
+        referralReward = 0.05;
+        referrer.balance = Math.round((referrer.balance + referralReward) * 100) / 100;
+        referrer.referralEarnings = Math.round((referrer.referralEarnings + referralReward) * 100) / 100;
+        this.processedReferralEvents.add(normalizedEventId);
+      }
+    }
+
+    return {
+      ok: true,
+      balance: user.balance,
+      referralReward,
+      referredBy: user.referredBy,
+    };
   }
 
   claimBonus(userId) {

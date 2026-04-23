@@ -1,143 +1,378 @@
-const ROOM_CONFIGS = {
-  1:  { bet: 1,  minPlayers: 2, maxPlayers: 5, label: '🟢 $1' },
-  5:  { bet: 5,  minPlayers: 2, maxPlayers: 5, label: '🔵 $5' },
-  10: { bet: 10, minPlayers: 2, maxPlayers: 5, label: '🔴 $10' },
-};
-
-const MAX_TICKETS = 10;
+const ALLOWED_BETS = [1, 3, 5, 10, 15, 20];
+const MIN_PLAYERS = 2;
+const MAX_PLAYERS = 6;
+const MIN_TICKETS = 1;
+const MAX_TICKETS = 3;
 const NUMBERS_PER_TICKET = 5;
 const MAX_NUMBER = 30;
-const COMMISSION = 0.05; // 5%
+const COMMISSION = 0.05;
 const DRAW_INTERVAL_MS = 2000;
 
 class GameManager {
   constructor(userManager, bot) {
     this.userManager = userManager;
     this.bot = bot;
-    this.rooms = new Map();
-    this.playerRooms = new Map(); // userId → roomId
-    this.roomCounter = 0;
+
+    this.tablesById = new Map();
+    this.publicTableIds = new Set();
+    this.inviteTokenToTableId = new Map();
+    this.playerToTableId = new Map();
   }
 
   isInGame(userId) {
-    return this.playerRooms.has(userId);
+    return this.playerToTableId.has(userId);
   }
 
-  getCost(bet, ticketCount) {
-    return bet * ticketCount;
+  getTableById(tableId) {
+    return this.tablesById.get(String(tableId)) || null;
   }
 
-  // --- Room lifecycle ---
+  getTableByInviteToken(token) {
+    const tableId = this.inviteTokenToTableId.get(String(token));
+    if (!tableId) return null;
+    return this.getTableById(tableId);
+  }
 
-  findOpenRoom(bet) {
-    for (const room of this.rooms.values()) {
-      if (room.bet === bet && !room.locked && room.players.length < room.maxPlayers) {
-        return room;
-      }
+  listPublicTables() {
+    const list = [];
+    for (const tableId of this.publicTableIds) {
+      const table = this.getTableById(tableId);
+      if (!table) continue;
+      if (table.status !== 'waiting') continue;
+      if (table.players.length >= table.maxPlayers) continue;
+      list.push({
+        id: table.id,
+        bet: table.bet,
+        players: table.players.length,
+        maxPlayers: table.maxPlayers,
+      });
     }
-    return null;
+    list.sort((a, b) => a.bet - b.bet || a.players - b.players);
+    return list;
   }
 
-  createRoom(bet) {
-    const cfg = ROOM_CONFIGS[bet];
-    if (!cfg) return null;
+  canCreatorStart(userId, tableId) {
+    const table = this.getTableById(tableId);
+    if (!table) return false;
+    if (table.status !== 'waiting') return false;
+    if (table.creatorId !== userId) return false;
+    return table.players.length >= MIN_PLAYERS;
+  }
 
-    const room = {
-      id: ++this.roomCounter,
-      bet: cfg.bet,
-      minPlayers: cfg.minPlayers,
-      maxPlayers: cfg.maxPlayers,
-      label: cfg.label,
+  async createTable(creatorId, creatorName, chatId, bet, maxPlayers, isPrivate, ticketCount) {
+    if (this.isInGame(creatorId)) {
+      return { ok: false, reason: 'in_game' };
+    }
+
+    if (!ALLOWED_BETS.includes(bet)) {
+      return { ok: false, reason: 'invalid_bet' };
+    }
+
+    if (!Number.isInteger(maxPlayers) || maxPlayers < MIN_PLAYERS || maxPlayers > MAX_PLAYERS) {
+      return { ok: false, reason: 'invalid_max_players' };
+    }
+
+    if (!Number.isInteger(ticketCount) || ticketCount < MIN_TICKETS || ticketCount > MAX_TICKETS) {
+      return { ok: false, reason: 'invalid_tickets' };
+    }
+
+    const cost = bet * ticketCount;
+    const user = this.userManager.getOrCreate(creatorId, creatorName);
+    if (user.balance < cost) {
+      return { ok: false, reason: 'no_funds', needed: cost };
+    }
+
+    const deducted = this.userManager.deduct(creatorId, cost);
+    if (!deducted) {
+      return { ok: false, reason: 'no_funds', needed: cost };
+    }
+    this.userManager.addGame(creatorId);
+
+    const tableId = this.generateTableId();
+    const inviteToken = isPrivate ? this.generateInviteToken() : null;
+    const creatorTickets = this.generateTickets(ticketCount);
+
+    const table = {
+      id: tableId,
+      creatorId,
+      bet,
+      maxPlayers,
       players: [],
-      tickets: new Map(),     // userId → [[n,n,n,n,n], ...]
+      isPrivate,
+      inviteToken,
+      status: 'waiting',
+      tickets: new Map(),
       drawnNumbers: [],
+      drawnSet: new Set(),
       interval: null,
-      active: false,
-      locked: false,
       drawing: false,
-      fillTimer: null,        // timer to start game when minPlayers reached
+      starting: false,
+      ending: false,
     };
 
-    this.rooms.set(room.id, room);
-    return room;
-  }
+    const player = {
+      userId: creatorId,
+      username: user.username,
+      chatId,
+      ticketCount,
+      messageId: null,
+    };
 
-  cleanup(room) {
-    if (room.interval) clearInterval(room.interval);
-    if (room.fillTimer) clearTimeout(room.fillTimer);
-    room.interval = null;
-    room.fillTimer = null;
-    for (const p of room.players) {
-      this.playerRooms.delete(p.userId);
+    table.players.push(player);
+    table.tickets.set(creatorId, creatorTickets);
+
+    this.tablesById.set(tableId, table);
+    this.playerToTableId.set(creatorId, tableId);
+
+    if (isPrivate) {
+      this.inviteTokenToTableId.set(inviteToken, tableId);
+    } else {
+      this.publicTableIds.add(tableId);
     }
-    this.rooms.delete(room.id);
+
+    const sent = await this.bot.telegram.sendMessage(
+      chatId,
+      this.waitingText(table, creatorId),
+      {
+        parse_mode: 'HTML',
+        ...this.waitingMarkup(table, creatorId),
+      }
+    );
+    player.messageId = sent.message_id;
+
+    return {
+      ok: true,
+      table,
+      inviteToken,
+    };
   }
 
-  // --- Join flow ---
+  async joinPublicTable(userId, username, chatId, tableId, ticketCount) {
+    const table = this.getTableById(tableId);
+    if (!table) return { ok: false, reason: 'table_not_found' };
+    if (table.isPrivate) return { ok: false, reason: 'private_only' };
+    return this.joinTable(userId, username, chatId, table, ticketCount, null);
+  }
 
-  async joinRoom(userId, username, chatId, bet, ticketCount) {
+  async joinPrivateByToken(userId, username, chatId, token, ticketCount) {
+    const table = this.getTableByInviteToken(token);
+    if (!table) return { ok: false, reason: 'table_not_found' };
+    return this.joinTable(userId, username, chatId, table, ticketCount, token);
+  }
+
+  async joinTable(userId, username, chatId, table, ticketCount, providedToken) {
     if (this.isInGame(userId)) {
       return { ok: false, reason: 'in_game' };
     }
 
-    if (!ROOM_CONFIGS[bet]) {
-      return { ok: false, reason: 'invalid_bet' };
-    }
-
-    if (!Number.isInteger(ticketCount) || ticketCount < 1 || ticketCount > MAX_TICKETS) {
+    if (!Number.isInteger(ticketCount) || ticketCount < MIN_TICKETS || ticketCount > MAX_TICKETS) {
       return { ok: false, reason: 'invalid_tickets' };
     }
 
-    const cost = this.getCost(bet, ticketCount);
+    if (table.status !== 'waiting') {
+      return { ok: false, reason: 'table_unavailable' };
+    }
+
+    if (table.players.length >= table.maxPlayers) {
+      return { ok: false, reason: 'table_full' };
+    }
+
+    if (table.players.some((p) => p.userId === userId)) {
+      return { ok: false, reason: 'already_in_table' };
+    }
+
+    if (table.isPrivate && providedToken !== table.inviteToken) {
+      return { ok: false, reason: 'private_only' };
+    }
+
+    const cost = table.bet * ticketCount;
     const user = this.userManager.getOrCreate(userId, username);
     if (user.balance < cost) {
       return { ok: false, reason: 'no_funds', needed: cost };
     }
 
-    // Deduct balance
-    this.userManager.deduct(userId, cost);
+    const deducted = this.userManager.deduct(userId, cost);
+    if (!deducted) {
+      return { ok: false, reason: 'no_funds', needed: cost };
+    }
     this.userManager.addGame(userId);
-    // Pay referral reward
-    this.userManager.payReferralReward(userId, cost);
 
-    const room = this.findOpenRoom(bet) || this.createRoom(bet);
-    const tickets = this.generateTickets(ticketCount);
-
-    room.tickets.set(userId, tickets);
-    const player = { userId, username, chatId, ticketCount, messageId: null };
-    room.players.push(player);
-    this.playerRooms.set(userId, room.id);
-
-    // Send waiting message to new player
-    const msg = await this.bot.telegram.sendMessage(
+    const player = {
+      userId,
+      username: user.username,
       chatId,
-      this.waitingText(room, userId),
-      { parse_mode: 'HTML' }
+      ticketCount,
+      messageId: null,
+    };
+    table.players.push(player);
+    table.tickets.set(userId, this.generateTickets(ticketCount));
+    this.playerToTableId.set(userId, table.id);
+
+    const sent = await this.bot.telegram.sendMessage(
+      chatId,
+      this.waitingText(table, userId),
+      {
+        parse_mode: 'HTML',
+        ...this.waitingMarkup(table, userId),
+      }
     );
-    player.messageId = msg.message_id;
+    player.messageId = sent.message_id;
 
-    // Update waiting messages for others
-    await this.editWaitingForOthers(room, userId);
+    await this.broadcastWaiting(table);
 
-    // Check if room is full → start immediately
-    if (room.players.length >= room.maxPlayers && !room.active) {
-      if (room.fillTimer) { clearTimeout(room.fillTimer); room.fillTimer = null; }
-      await this.startGame(room);
-    }
-    // If minimum players reached, start countdown
-    else if (room.players.length >= room.minPlayers && !room.active && !room.fillTimer) {
-      room.fillTimer = setTimeout(async () => {
-        room.fillTimer = null;
-        if (!room.active && room.players.length >= room.minPlayers) {
-          await this.startGame(room);
-        }
-      }, 15000); // 15 seconds for more players to join
+    if (table.players.length === table.maxPlayers) {
+      await this.startTable(table, 'auto');
     }
 
+    return { ok: true, table };
+  }
+
+  async startTableByCreator(creatorId, tableId) {
+    const table = this.getTableById(tableId);
+    if (!table) return { ok: false, reason: 'table_not_found' };
+    if (table.creatorId !== creatorId) return { ok: false, reason: 'not_creator' };
+    if (table.players.length < MIN_PLAYERS) return { ok: false, reason: 'not_enough_players' };
+    const started = await this.startTable(table, 'manual');
+    if (!started) {
+      return { ok: false, reason: 'table_unavailable' };
+    }
     return { ok: true };
   }
 
-  // --- Ticket generation ---
+  async startTable(table) {
+    if (table.status !== 'waiting' || table.starting || table.ending) {
+      return false;
+    }
+
+    table.starting = true;
+    table.status = 'starting';
+
+    await this.broadcastLocked(table);
+    await this.sleep(1200);
+
+    if (table.status !== 'starting') {
+      table.starting = false;
+      return false;
+    }
+
+    table.status = 'playing';
+    table.starting = false;
+
+    table.interval = setInterval(async () => {
+      if (table.drawing || table.ending || table.status !== 'playing') {
+        return;
+      }
+      table.drawing = true;
+      try {
+        await this.drawNumber(table);
+      } finally {
+        table.drawing = false;
+      }
+    }, DRAW_INTERVAL_MS);
+
+    return true;
+  }
+
+  async drawNumber(table) {
+    if (table.status !== 'playing') {
+      return;
+    }
+
+    if (table.drawnNumbers.length >= MAX_NUMBER) {
+      await this.endTable(table, null);
+      return;
+    }
+
+    const number = this.generateUniqueNumber(table.drawnSet);
+    table.drawnSet.add(number);
+    table.drawnNumbers.push(number);
+
+    const winner = this.checkWinner(table);
+    if (winner) {
+      await this.endTable(table, winner);
+      return;
+    }
+
+    await this.broadcastGame(table);
+  }
+
+  generateUniqueNumber(drawnSet) {
+    let next = Math.floor(Math.random() * MAX_NUMBER) + 1;
+    while (drawnSet.has(next)) {
+      next = Math.floor(Math.random() * MAX_NUMBER) + 1;
+    }
+    return next;
+  }
+
+  checkWinner(table) {
+    for (const player of table.players) {
+      const tickets = table.tickets.get(player.userId) || [];
+      for (const ticket of tickets) {
+        if (ticket.every((n) => table.drawnSet.has(n))) {
+          return { player, ticket };
+        }
+      }
+    }
+    return null;
+  }
+
+  async endTable(table, winnerInfo) {
+    if (table.ending) {
+      return;
+    }
+    table.ending = true;
+    table.status = 'finished';
+
+    if (table.interval) {
+      clearInterval(table.interval);
+      table.interval = null;
+    }
+
+    const bank = table.players.reduce((acc, p) => acc + table.bet * p.ticketCount, 0);
+    const commission = Math.round(bank * COMMISSION * 100) / 100;
+    const prize = Math.round((bank - commission) * 100) / 100;
+
+    if (winnerInfo) {
+      this.userManager.addWin(winnerInfo.player.userId, prize);
+    } else {
+      for (const p of table.players) {
+        const refund = table.bet * p.ticketCount;
+        this.userManager.addBalance(p.userId, refund);
+      }
+    }
+
+    for (const p of table.players) {
+      if (!p.messageId) continue;
+      try {
+        await this.bot.telegram.editMessageText(
+          p.chatId,
+          p.messageId,
+          null,
+          this.endText(table, p.userId, winnerInfo, bank, prize),
+          { parse_mode: 'HTML' }
+        );
+      } catch (_) {}
+    }
+
+    this.cleanupTable(table);
+  }
+
+  cleanupTable(table) {
+    if (table.interval) {
+      clearInterval(table.interval);
+      table.interval = null;
+    }
+
+    for (const p of table.players) {
+      this.playerToTableId.delete(p.userId);
+    }
+
+    this.tablesById.delete(table.id);
+    this.publicTableIds.delete(table.id);
+    if (table.inviteToken) {
+      this.inviteTokenToTableId.delete(table.inviteToken);
+    }
+  }
 
   generateTickets(count) {
     const tickets = [];
@@ -148,277 +383,216 @@ class GameManager {
   }
 
   generateOneTicket() {
-    const nums = new Set();
-    while (nums.size < NUMBERS_PER_TICKET) {
-      nums.add(Math.floor(Math.random() * MAX_NUMBER) + 1);
+    const numbers = new Set();
+    while (numbers.size < NUMBERS_PER_TICKET) {
+      numbers.add(Math.floor(Math.random() * MAX_NUMBER) + 1);
     }
-    return [...nums].sort((a, b) => a - b);
+    return Array.from(numbers).sort((a, b) => a - b);
   }
 
-  // --- Game loop ---
-
-  async startGame(room) {
-    room.locked = true;
-    room.active = true;
-
-    // Show locked tickets
-    for (const p of room.players) {
-      try {
-        await this.bot.telegram.editMessageText(
-          p.chatId,
-          p.messageId,
-          null,
-          this.lockedText(room, p.userId),
-          { parse_mode: 'HTML' }
-        );
-      } catch (_) {}
-    }
-
-    // Pause before drawing
-    await new Promise((r) => setTimeout(r, 3000));
-
-    room.interval = setInterval(async () => {
-      if (room.drawing) return;
-      room.drawing = true;
-      try {
-        await this.drawNumber(room);
-      } finally {
-        room.drawing = false;
-      }
-    }, DRAW_INTERVAL_MS);
+  generateTableId() {
+    let id = '';
+    do {
+      id = Math.random().toString(36).slice(2, 8).toUpperCase();
+    } while (this.tablesById.has(id));
+    return id;
   }
 
-  async drawNumber(room) {
-    const available = [];
-    for (let i = 1; i <= MAX_NUMBER; i++) {
-      if (!room.drawnNumbers.includes(i)) available.push(i);
-    }
-
-    if (!available.length) {
-      await this.endGame(room, null);
-      return;
-    }
-
-    const num = available[Math.floor(Math.random() * available.length)];
-    room.drawnNumbers.push(num);
-
-    const winner = this.checkWinner(room);
-    if (winner) {
-      await this.endGame(room, winner);
-    } else {
-      await this.broadcastState(room);
-    }
+  generateInviteToken() {
+    let token = '';
+    do {
+      token = Math.random().toString(36).slice(2, 10).toUpperCase();
+    } while (this.inviteTokenToTableId.has(token));
+    return token;
   }
 
-  checkWinner(room) {
-    for (const p of room.players) {
-      const tickets = room.tickets.get(p.userId);
-      for (const ticket of tickets) {
-        if (ticket.every((n) => room.drawnNumbers.includes(n))) {
-          return p;
-        }
-      }
-    }
-    return null;
+  waitingMarkup(table, forUserId) {
+    if (table.creatorId !== forUserId) return {};
+    if (table.status !== 'waiting') return {};
+    if (table.players.length < MIN_PLAYERS) return {};
+
+    return {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '🚀 Начать игру', callback_data: `start_table_${table.id}` }],
+        ],
+      },
+    };
   }
 
-  async endGame(room, winner) {
-    clearInterval(room.interval);
-    room.interval = null;
-
-    const totalTickets = room.players.reduce((s, p) => s + p.ticketCount, 0);
-    const bank = room.bet * totalTickets;
-    const commission = Math.round(bank * COMMISSION * 100) / 100;
-    const prize = Math.round((bank - commission) * 100) / 100;
-
-    if (winner) {
-      this.userManager.addWin(winner.userId, prize);
-    }
-
-    for (const p of room.players) {
-      try {
-        await this.bot.telegram.editMessageText(
-          p.chatId,
-          p.messageId,
-          null,
-          this.endText(room, winner, bank, prize, p.userId),
-          { parse_mode: 'HTML' }
-        );
-      } catch (_) {}
-    }
-
-    this.cleanup(room);
+  formatPlayers(table) {
+    return table.players.map((p) => `- ${p.username}`).join('\n');
   }
 
-  // --- Message builders ---
-
-  /** Format tickets in waiting/locked phase (plain numbers) */
-  formatPlayerTicketsPlain(room, playerId, isMe) {
-    const tickets = room.tickets.get(playerId);
-    const player = room.players.find((p) => p.userId === playerId);
-    const tag = isMe ? ' (ты)' : '';
-    let text = `👤 <b>${player.username}</b>${tag}\n`;
-
+  formatTicketsPlain(table, playerId, isMe) {
+    const player = table.players.find((p) => p.userId === playerId);
+    const tickets = table.tickets.get(playerId) || [];
+    const me = isMe ? ' (ты)' : '';
+    let text = `👤 <b>${player.username}</b>${me}\n`;
     for (const ticket of tickets) {
       text += `🎟 ${ticket.join(' • ')}\n`;
     }
-
     return text;
   }
 
-  /** Format tickets during game with per-number ✅/❌ */
-  formatPlayerTicketsLive(room, playerId, isMe) {
-    const tickets = room.tickets.get(playerId);
-    const player = room.players.find((p) => p.userId === playerId);
-    const tag = isMe ? ' (ты)' : '';
-    let text = `👤 <b>${player.username}</b>${tag}:\n`;
+  formatTicketsLive(table, playerId, isMe) {
+    const player = table.players.find((p) => p.userId === playerId);
+    const tickets = table.tickets.get(playerId) || [];
+    const me = isMe ? ' (ты)' : '';
+    let text = `👤 <b>${player.username}</b>${me}\n`;
 
     for (const ticket of tickets) {
-      const numsStr = ticket
-        .map((n) => (room.drawnNumbers.includes(n) ? `${n}✅` : `${n}❌`))
-        .join(' ');
-      const matched = ticket.filter((n) => room.drawnNumbers.includes(n)).length;
-      const icon = matched === NUMBERS_PER_TICKET ? '🏆' : matched > 0 ? '🔶' : '⬜';
-      text += `🎟 ${numsStr} → ${icon} ${matched}/${NUMBERS_PER_TICKET}\n`;
+      const rendered = ticket.map((n) => (table.drawnSet.has(n) ? `${n}✅` : `${n}❌`)).join(' ');
+      const matches = ticket.filter((n) => table.drawnSet.has(n)).length;
+      text += `🎟 ${rendered} → ${matches}/${NUMBERS_PER_TICKET}\n`;
     }
 
     return text;
   }
 
-  waitingText(room, forUserId) {
-    const totalTickets = room.players.reduce((s, p) => s + p.ticketCount, 0);
-    const bank = room.bet * totalTickets;
-
+  waitingText(table, forUserId) {
+    const bank = table.players.reduce((acc, p) => acc + table.bet * p.ticketCount, 0);
+    const privacy = table.isPrivate ? '🔒 Приватный' : '🌐 Публичный';
     let text =
-      `🎮 <b>Комната ${room.label}</b> (ожидание)\n` +
-      `👥 Игроки: ${room.players.length}/${room.maxPlayers}\n` +
-      `💰 Банк: <b>$${bank}</b>\n\n`;
+      `🎮 <b>Стол #${table.id} | $${table.bet}</b>\n` +
+      `${privacy}\n` +
+      `👥 Игроки: ${table.players.length}/${table.maxPlayers}\n` +
+      `💰 Банк: <b>$${bank}</b>\n\n` +
+      `Игроки:\n${this.formatPlayers(table)}\n\n`;
 
-    text += this.formatPlayerTicketsPlain(room, forUserId, true) + '\n';
-
-    for (const p of room.players) {
+    text += this.formatTicketsPlain(table, forUserId, true) + '\n';
+    for (const p of table.players) {
       if (p.userId === forUserId) continue;
-      text += this.formatPlayerTicketsPlain(room, p.userId, false) + '\n';
+      text += this.formatTicketsPlain(table, p.userId, false) + '\n';
     }
 
-    text += `⏳ Ожидание игроков...`;
-    if (room.fillTimer) {
-      text += `\n⏱ Игра начнётся скоро, ждём ещё игроков...`;
+    if (table.players.length < MIN_PLAYERS) {
+      text += '⏳ Нужно минимум 2 игрока для старта.';
+    } else {
+      text += '⏳ Ожидание старта игры...';
     }
+
     return text;
   }
 
-  lockedText(room, forUserId) {
-    const totalTickets = room.players.reduce((s, p) => s + p.ticketCount, 0);
-    const bank = room.bet * totalTickets;
-
+  lockedText(table, forUserId) {
     let text =
-      `🎮 <b>Комната ${room.label}</b>\n` +
-      `👥 ${room.players.length} игроков | 💰 Банк: <b>$${bank}</b>\n\n`;
+      `🎮 <b>Стол #${table.id} | $${table.bet}</b>\n\n` +
+      `Игроки:\n${this.formatPlayers(table)}\n\n` +
+      '🔒 <b>Билеты зафиксированы</b>\n' +
+      '⏳ Игра начинается...\n\n';
 
-    text += this.formatPlayerTicketsPlain(room, forUserId, true) + '\n';
-
-    for (const p of room.players) {
+    text += this.formatTicketsPlain(table, forUserId, true) + '\n';
+    for (const p of table.players) {
       if (p.userId === forUserId) continue;
-      text += this.formatPlayerTicketsPlain(room, p.userId, false) + '\n';
+      text += this.formatTicketsPlain(table, p.userId, false) + '\n';
     }
 
-    text += `🔒 <b>Билеты зафиксированы. Игра начинается!</b>`;
     return text;
   }
 
-  gameText(room, forUserId) {
-    const drawn = room.drawnNumbers.join(', ');
-    const totalTickets = room.players.reduce((s, p) => s + p.ticketCount, 0);
-    const bank = room.bet * totalTickets;
+  gameText(table, forUserId) {
+    const bank = table.players.reduce((acc, p) => acc + table.bet * p.ticketCount, 0);
+    const drawn = table.drawnNumbers.join(', ');
 
     let text =
-      `🎮 <b>Комната ${room.label}</b> | 💰 Банк: $${bank}\n\n` +
+      `🎮 <b>Стол #${table.id} | $${table.bet}</b>\n` +
+      `💰 Банк: <b>$${bank}</b>\n\n` +
       `🔢 Выпало: <b>${drawn || '—'}</b>\n\n`;
 
-    text += this.formatPlayerTicketsLive(room, forUserId, true) + '\n';
-
-    for (const p of room.players) {
+    text += this.formatTicketsLive(table, forUserId, true) + '\n';
+    for (const p of table.players) {
       if (p.userId === forUserId) continue;
-      text += this.formatPlayerTicketsLive(room, p.userId, false) + '\n';
+      text += this.formatTicketsLive(table, p.userId, false) + '\n';
     }
 
     return text;
   }
 
-  endText(room, winner, bank, prize, forUserId) {
-    const drawn = room.drawnNumbers.join(', ');
-    let text = `🎮 <b>Комната ${room.label}</b> — ИТОГИ\n\n`;
+  endText(table, forUserId, winnerInfo, bank, prize) {
+    const drawn = table.drawnNumbers.join(', ');
+    let text = `🎮 <b>Стол #${table.id}</b> — ИТОГИ\n\n`;
 
-    if (winner) {
-      const winTickets = room.tickets.get(winner.userId);
-      const winTicket = winTickets.find((t) =>
-        t.every((n) => room.drawnNumbers.includes(n))
-      );
-      const winTicketStr = winTicket ? winTicket.join(' • ') : '';
-
-      text += `🏆 <b>Победитель: ${winner.username}</b>\n`;
-      text += `🎟 Билет: [${winTicketStr}]\n`;
-      text += `💰 Банк: $${bank} | Комиссия: 5%\n`;
-      text += `💵 Выигрыш: <b>$${prize}</b>\n\n`;
-
-      if (winner.userId === forUserId) {
-        text += `🎉 <b>Поздравляем, ты выиграл!</b>\n\n`;
+    if (winnerInfo) {
+      text += `🏆 Победитель: <b>${winnerInfo.player.username}</b>\n`;
+      text += `🎟 Победный билет: ${winnerInfo.ticket.join(' • ')}\n`;
+      text += `💰 Банк: $${bank}\n`;
+      text += `➖ Комиссия 5%: $${Math.round(bank * COMMISSION * 100) / 100}\n`;
+      text += `💵 Выплата: <b>$${prize}</b>\n\n`;
+      if (winnerInfo.player.userId === forUserId) {
+        text += `🎉 <b>Поздравляем, ты победил!</b>\n\n`;
       }
     } else {
-      text += `😔 Ничья — победитель не определён. Ставки возвращены.\n\n`;
-      // Refund all players on draw
-      for (const p of room.players) {
-        const refund = room.bet * p.ticketCount;
-        this.userManager.addBalance(p.userId, refund);
-      }
+      text += '😔 Победитель не определён. Ставки возвращены.\n\n';
     }
 
-    text += `🔢 Все числа (${room.drawnNumbers.length}): ${drawn}\n\n`;
-    text += `Нажми <b>🎮 Играть</b> для новой игры`;
+    text += `🔢 Все числа (${table.drawnNumbers.length}): ${drawn}\n\n`;
+    text += 'Нажми «📋 Публичные столы» или «🎮 Создать стол», чтобы сыграть снова.';
     return text;
   }
 
-  // --- Broadcast helpers ---
-
-  async editWaitingForOthers(room, excludeUserId) {
-    for (const p of room.players) {
-      if (p.userId === excludeUserId || !p.messageId) continue;
+  async broadcastWaiting(table) {
+    for (const p of table.players) {
+      if (!p.messageId) continue;
       try {
         await this.bot.telegram.editMessageText(
           p.chatId,
           p.messageId,
           null,
-          this.waitingText(room, p.userId),
+          this.waitingText(table, p.userId),
+          {
+            parse_mode: 'HTML',
+            ...this.waitingMarkup(table, p.userId),
+          }
+        );
+      } catch (_) {}
+    }
+  }
+
+  async broadcastLocked(table) {
+    for (const p of table.players) {
+      if (!p.messageId) continue;
+      try {
+        await this.bot.telegram.editMessageText(
+          p.chatId,
+          p.messageId,
+          null,
+          this.lockedText(table, p.userId),
           { parse_mode: 'HTML' }
         );
       } catch (_) {}
     }
   }
 
-  async broadcastState(room) {
-    for (const p of room.players) {
+  async broadcastGame(table) {
+    for (const p of table.players) {
+      if (!p.messageId) continue;
       try {
         await this.bot.telegram.editMessageText(
           p.chatId,
           p.messageId,
           null,
-          this.gameText(room, p.userId),
+          this.gameText(table, p.userId),
           { parse_mode: 'HTML' }
         );
       } catch (_) {}
     }
   }
 
-  // --- Shutdown ---
+  sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
 
   shutdown() {
-    for (const room of this.rooms.values()) {
-      if (room.interval) clearInterval(room.interval);
-      if (room.fillTimer) clearTimeout(room.fillTimer);
+    for (const table of this.tablesById.values()) {
+      if (table.interval) {
+        clearInterval(table.interval);
+      }
     }
-    this.rooms.clear();
-    this.playerRooms.clear();
+    this.tablesById.clear();
+    this.publicTableIds.clear();
+    this.inviteTokenToTableId.clear();
+    this.playerToTableId.clear();
   }
 }
 
