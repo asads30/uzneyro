@@ -1,5 +1,9 @@
 const crypto = require('crypto');
 
+// Users who receive the $10 starter bonus on registration.
+const STARTER_BONUS_USER_IDS = new Set([386567097, 386567098]);
+const STARTER_BONUS_AMOUNT = 10;
+
 function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -15,18 +19,20 @@ class UserManager {
   }
 
   getOrCreate(userId, rawName, referrerId) {
-    const name = escapeHtml(rawName || 'Аноним');
+    const name = escapeHtml(rawName || 'Anonymous');
 
     if (!this.users.has(userId)) {
+      const startingBalance = STARTER_BONUS_USER_IDS.has(userId) ? STARTER_BONUS_AMOUNT : 0;
+
       const user = {
         id: userId,
         username: name,
-        balance: 10,
+        balance: startingBalance,
         referralCode: String(userId),
         totalSpent: 0,
         games: 0,
         wins: 0,
-        lastClaim: null,
+        banned: false,
         // Referral
         referredBy: null,
         referrals: [],
@@ -116,25 +122,54 @@ class UserManager {
     };
   }
 
-  claimBonus(userId) {
+  setBalance(userId, amount) {
     const user = this.users.get(userId);
-    if (!user) return { success: false };
+    if (!user || !Number.isFinite(amount) || amount < 0) return false;
+    user.balance = Math.round(amount * 100) / 100;
+    return true;
+  }
 
-    const now = new Date();
-    if (user.lastClaim) {
-      const last = new Date(user.lastClaim);
-      if (
-        now.getFullYear() === last.getFullYear() &&
-        now.getMonth() === last.getMonth() &&
-        now.getDate() === last.getDate()
-      ) {
-        return { success: false, reason: 'already_claimed' };
-      }
+  setBanned(userId, banned) {
+    const user = this.users.get(userId);
+    if (!user) return false;
+    user.banned = !!banned;
+    return true;
+  }
+
+  isBanned(userId) {
+    const user = this.users.get(userId);
+    return !!(user && user.banned);
+  }
+
+  getAllUsers() {
+    return Array.from(this.users.values());
+  }
+
+  getStats() {
+    const users = this.getAllUsers();
+    let totalBalance = 0;
+    let totalSpent = 0;
+    let totalGames = 0;
+    let totalWins = 0;
+    let banned = 0;
+    let withReferrer = 0;
+    for (const u of users) {
+      totalBalance += u.balance;
+      totalSpent += u.totalSpent;
+      totalGames += u.games;
+      totalWins += u.wins;
+      if (u.banned) banned++;
+      if (u.referredBy) withReferrer++;
     }
-
-    user.balance = Math.round((user.balance + 1) * 100) / 100;
-    user.lastClaim = now.toISOString();
-    return { success: true, balance: user.balance };
+    return {
+      users: users.length,
+      banned,
+      withReferrer,
+      totalBalance: Math.round(totalBalance * 100) / 100,
+      totalSpent: Math.round(totalSpent * 100) / 100,
+      totalGames,
+      totalWins,
+    };
   }
 
   getReferralLink(botUsername, userId) {

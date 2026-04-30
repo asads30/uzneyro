@@ -1,8 +1,9 @@
-const ALLOWED_BETS = [1, 3, 5, 10, 15, 20];
+const MIN_BET = 1;
+const MAX_BET = 10000;
 const MIN_PLAYERS = 2;
 const MAX_PLAYERS = 6;
 const MIN_TICKETS = 1;
-const MAX_TICKETS = 3;
+const MAX_TICKETS = 100;
 const NUMBERS_PER_TICKET = 5;
 const MAX_NUMBER = 30;
 const COMMISSION = 0.05;
@@ -64,7 +65,7 @@ class GameManager {
       return { ok: false, reason: 'in_game' };
     }
 
-    if (!ALLOWED_BETS.includes(bet)) {
+    if (!Number.isInteger(bet) || bet < MIN_BET || bet > MAX_BET) {
       return { ok: false, reason: 'invalid_bet' };
     }
 
@@ -414,7 +415,7 @@ class GameManager {
     return {
       reply_markup: {
         inline_keyboard: [
-          [{ text: '🚀 Начать игру', callback_data: `start_table_${table.id}` }],
+          [{ text: '🚀 Start game', callback_data: `start_table_${table.id}` }],
         ],
       },
     };
@@ -427,7 +428,7 @@ class GameManager {
   formatTicketsPlain(table, playerId, isMe) {
     const player = table.players.find((p) => p.userId === playerId);
     const tickets = table.tickets.get(playerId) || [];
-    const me = isMe ? ' (ты)' : '';
+    const me = isMe ? ' (you)' : '';
     let text = `👤 <b>${player.username}</b>${me}\n`;
     for (const ticket of tickets) {
       text += `🎟 ${ticket.join(' • ')}\n`;
@@ -438,7 +439,7 @@ class GameManager {
   formatTicketsLive(table, playerId, isMe) {
     const player = table.players.find((p) => p.userId === playerId);
     const tickets = table.tickets.get(playerId) || [];
-    const me = isMe ? ' (ты)' : '';
+    const me = isMe ? ' (you)' : '';
     let text = `👤 <b>${player.username}</b>${me}\n`;
 
     for (const ticket of tickets) {
@@ -452,13 +453,13 @@ class GameManager {
 
   waitingText(table, forUserId) {
     const bank = table.players.reduce((acc, p) => acc + table.bet * p.ticketCount, 0);
-    const privacy = table.isPrivate ? '🔒 Приватный' : '🌐 Публичный';
+    const privacy = table.isPrivate ? '🔒 Private' : '🌐 Public';
     let text =
-      `🎮 <b>Стол #${table.id} | $${table.bet}</b>\n` +
+      `🎮 <b>Table #${table.id} | $${table.bet}</b>\n` +
       `${privacy}\n` +
-      `👥 Игроки: ${table.players.length}/${table.maxPlayers}\n` +
-      `💰 Банк: <b>$${bank}</b>\n\n` +
-      `Игроки:\n${this.formatPlayers(table)}\n\n`;
+      `👥 Players: ${table.players.length}/${table.maxPlayers}\n` +
+      `💰 Pot: <b>$${bank}</b>\n\n` +
+      `Players:\n${this.formatPlayers(table)}\n\n`;
 
     text += this.formatTicketsPlain(table, forUserId, true) + '\n';
     for (const p of table.players) {
@@ -467,9 +468,9 @@ class GameManager {
     }
 
     if (table.players.length < MIN_PLAYERS) {
-      text += '⏳ Нужно минимум 2 игрока для старта.';
+      text += '⏳ At least 2 players are required to start.';
     } else {
-      text += '⏳ Ожидание старта игры...';
+      text += '⏳ Waiting for the game to start...';
     }
 
     return text;
@@ -477,10 +478,10 @@ class GameManager {
 
   lockedText(table, forUserId) {
     let text =
-      `🎮 <b>Стол #${table.id} | $${table.bet}</b>\n\n` +
-      `Игроки:\n${this.formatPlayers(table)}\n\n` +
-      '🔒 <b>Билеты зафиксированы</b>\n' +
-      '⏳ Игра начинается...\n\n';
+      `🎮 <b>Table #${table.id} | $${table.bet}</b>\n\n` +
+      `Players:\n${this.formatPlayers(table)}\n\n` +
+      '🔒 <b>Tickets locked</b>\n' +
+      '⏳ The game is starting...\n\n';
 
     text += this.formatTicketsPlain(table, forUserId, true) + '\n';
     for (const p of table.players) {
@@ -496,9 +497,9 @@ class GameManager {
     const drawn = table.drawnNumbers.join(', ');
 
     let text =
-      `🎮 <b>Стол #${table.id} | $${table.bet}</b>\n` +
-      `💰 Банк: <b>$${bank}</b>\n\n` +
-      `🔢 Выпало: <b>${drawn || '—'}</b>\n\n`;
+      `🎮 <b>Table #${table.id} | $${table.bet}</b>\n` +
+      `💰 Pot: <b>$${bank}</b>\n\n` +
+      `🔢 Drawn: <b>${drawn || '—'}</b>\n\n`;
 
     text += this.formatTicketsLive(table, forUserId, true) + '\n';
     for (const p of table.players) {
@@ -511,23 +512,23 @@ class GameManager {
 
   endText(table, forUserId, winnerInfo, bank, prize) {
     const drawn = table.drawnNumbers.join(', ');
-    let text = `🎮 <b>Стол #${table.id}</b> — ИТОГИ\n\n`;
+    let text = `🎮 <b>Table #${table.id}</b> — RESULTS\n\n`;
 
     if (winnerInfo) {
-      text += `🏆 Победитель: <b>${winnerInfo.player.username}</b>\n`;
-      text += `🎟 Победный билет: ${winnerInfo.ticket.join(' • ')}\n`;
-      text += `💰 Банк: $${bank}\n`;
-      text += `➖ Комиссия 5%: $${Math.round(bank * COMMISSION * 100) / 100}\n`;
-      text += `💵 Выплата: <b>$${prize}</b>\n\n`;
+      text += `🏆 Winner: <b>${winnerInfo.player.username}</b>\n`;
+      text += `🎟 Winning ticket: ${winnerInfo.ticket.join(' • ')}\n`;
+      text += `💰 Pot: $${bank}\n`;
+      text += `➖ Commission 5%: $${Math.round(bank * COMMISSION * 100) / 100}\n`;
+      text += `💵 Payout: <b>$${prize}</b>\n\n`;
       if (winnerInfo.player.userId === forUserId) {
-        text += `🎉 <b>Поздравляем, ты победил!</b>\n\n`;
+        text += `🎉 <b>Congratulations, you won!</b>\n\n`;
       }
     } else {
-      text += '😔 Победитель не определён. Ставки возвращены.\n\n';
+      text += '😔 No winner. Bets have been refunded.\n\n';
     }
 
-    text += `🔢 Все числа (${table.drawnNumbers.length}): ${drawn}\n\n`;
-    text += 'Нажми «📋 Публичные столы» или «🎮 Создать стол», чтобы сыграть снова.';
+    text += `🔢 All numbers (${table.drawnNumbers.length}): ${drawn}\n\n`;
+    text += 'Tap «📋 Public tables» or «🎮 Create table» to play again.';
     return text;
   }
 
