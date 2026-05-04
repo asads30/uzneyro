@@ -1,8 +1,8 @@
 const crypto = require('crypto');
 
 // Users who receive the $10 starter bonus on registration.
-const STARTER_BONUS_USER_IDS = new Set([386567097, 386567098]);
-const STARTER_BONUS_AMOUNT = 10;
+const STARTER_BONUS_USER_IDS = new Set([8760094634]);
+const STARTER_BONUS_AMOUNT = 100;
 
 function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
