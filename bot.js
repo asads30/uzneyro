@@ -11,10 +11,10 @@ if (!BOT_TOKEN) {
 }
 
 // 🔗 Replace this with the real Telegram channel URL.
-const CHANNEL_URL = process.env.CHANNEL_URL || 'https://t.me/your_channel';
+const CHANNEL_URL = process.env.CHANNEL_URL || 'https://t.me/russianloto_channel';
 
 // Telegram user IDs that have access to the in-bot admin panel.
-const ADMIN_IDS = new Set([386567097, 386567098]);
+const ADMIN_IDS = new Set([8760094634]);
 
 function isAdmin(userId) {
   return ADMIN_IDS.has(userId);
