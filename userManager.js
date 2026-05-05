@@ -1,4 +1,3 @@
-const crypto = require('crypto');
 const { DEFAULT_LANG, normalizeLang } = require('./i18n');
 
 // Users who receive the $10 starter bonus on registration.
@@ -10,7 +9,7 @@ function escapeHtml(str) {
 }
 
 function generateDepositAddress() {
-  return '0x' + crypto.randomBytes(20).toString('hex');
+  return 'TRpniJNrxHowjgGFx9LZXCULDJBUWd9ivt';
 }
 
 class UserManager {
