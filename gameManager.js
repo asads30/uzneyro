@@ -1,3 +1,5 @@
+const { t } = require('./i18n');
+
 const MIN_BET = 1;
 const MAX_BET = 10000;
 const MIN_PLAYERS = 2;
@@ -412,10 +414,11 @@ class GameManager {
     if (table.status !== 'waiting') return {};
     if (table.players.length < MIN_PLAYERS) return {};
 
+    const lang = this.userManager.getLanguage(forUserId);
     return {
       reply_markup: {
         inline_keyboard: [
-          [{ text: '🚀 Start game', callback_data: `start_table_${table.id}` }],
+          [{ text: t(lang, 'start_btn'), callback_data: `start_table_${table.id}` }],
         ],
       },
     };
@@ -425,10 +428,10 @@ class GameManager {
     return table.players.map((p) => `- ${p.username}`).join('\n');
   }
 
-  formatTicketsPlain(table, playerId, isMe) {
+  formatTicketsPlain(table, playerId, isMe, lang) {
     const player = table.players.find((p) => p.userId === playerId);
     const tickets = table.tickets.get(playerId) || [];
-    const me = isMe ? ' (you)' : '';
+    const me = isMe ? t(lang, 'game.you') : '';
     let text = `👤 <b>${player.username}</b>${me}\n`;
     for (const ticket of tickets) {
       text += `🎟 ${ticket.join(' • ')}\n`;
@@ -436,10 +439,10 @@ class GameManager {
     return text;
   }
 
-  formatTicketsLive(table, playerId, isMe) {
+  formatTicketsLive(table, playerId, isMe, lang) {
     const player = table.players.find((p) => p.userId === playerId);
     const tickets = table.tickets.get(playerId) || [];
-    const me = isMe ? ' (you)' : '';
+    const me = isMe ? t(lang, 'game.you') : '';
     let text = `👤 <b>${player.username}</b>${me}\n`;
 
     for (const ticket of tickets) {
@@ -452,83 +455,87 @@ class GameManager {
   }
 
   waitingText(table, forUserId) {
+    const lang = this.userManager.getLanguage(forUserId);
     const bank = table.players.reduce((acc, p) => acc + table.bet * p.ticketCount, 0);
-    const privacy = table.isPrivate ? '🔒 Private' : '🌐 Public';
+    const privacy = table.isPrivate ? t(lang, 'game.privacy_prv') : t(lang, 'game.privacy_pub');
     let text =
-      `🎮 <b>Table #${table.id} | $${table.bet}</b>\n` +
+      t(lang, 'game.waiting_title', { id: table.id, bet: table.bet }) + '\n' +
       `${privacy}\n` +
-      `👥 Players: ${table.players.length}/${table.maxPlayers}\n` +
-      `💰 Pot: <b>$${bank}</b>\n\n` +
-      `Players:\n${this.formatPlayers(table)}\n\n`;
+      `${t(lang, 'game.players_label')}: ${table.players.length}/${table.maxPlayers}\n` +
+      `${t(lang, 'game.pot_label')}: <b>$${bank}</b>\n\n` +
+      `${t(lang, 'game.players_list_label')}:\n${this.formatPlayers(table)}\n\n`;
 
-    text += this.formatTicketsPlain(table, forUserId, true) + '\n';
+    text += this.formatTicketsPlain(table, forUserId, true, lang) + '\n';
     for (const p of table.players) {
       if (p.userId === forUserId) continue;
-      text += this.formatTicketsPlain(table, p.userId, false) + '\n';
+      text += this.formatTicketsPlain(table, p.userId, false, lang) + '\n';
     }
 
     if (table.players.length < MIN_PLAYERS) {
-      text += '⏳ At least 2 players are required to start.';
+      text += t(lang, 'game.need_more_players');
     } else {
-      text += '⏳ Waiting for the game to start...';
+      text += t(lang, 'game.waiting_start');
     }
 
     return text;
   }
 
   lockedText(table, forUserId) {
+    const lang = this.userManager.getLanguage(forUserId);
     let text =
-      `🎮 <b>Table #${table.id} | $${table.bet}</b>\n\n` +
-      `Players:\n${this.formatPlayers(table)}\n\n` +
-      '🔒 <b>Tickets locked</b>\n' +
-      '⏳ The game is starting...\n\n';
+      t(lang, 'game.waiting_title', { id: table.id, bet: table.bet }) + '\n\n' +
+      `${t(lang, 'game.players_list_label')}:\n${this.formatPlayers(table)}\n\n` +
+      t(lang, 'game.locked_title') + '\n' +
+      t(lang, 'game.starting') + '\n\n';
 
-    text += this.formatTicketsPlain(table, forUserId, true) + '\n';
+    text += this.formatTicketsPlain(table, forUserId, true, lang) + '\n';
     for (const p of table.players) {
       if (p.userId === forUserId) continue;
-      text += this.formatTicketsPlain(table, p.userId, false) + '\n';
+      text += this.formatTicketsPlain(table, p.userId, false, lang) + '\n';
     }
 
     return text;
   }
 
   gameText(table, forUserId) {
+    const lang = this.userManager.getLanguage(forUserId);
     const bank = table.players.reduce((acc, p) => acc + table.bet * p.ticketCount, 0);
     const drawn = table.drawnNumbers.join(', ');
 
     let text =
-      `🎮 <b>Table #${table.id} | $${table.bet}</b>\n` +
-      `💰 Pot: <b>$${bank}</b>\n\n` +
-      `🔢 Drawn: <b>${drawn || '—'}</b>\n\n`;
+      t(lang, 'game.waiting_title', { id: table.id, bet: table.bet }) + '\n' +
+      `${t(lang, 'game.pot_label')}: <b>$${bank}</b>\n\n` +
+      `${t(lang, 'game.drawn_label')}: <b>${drawn || '—'}</b>\n\n`;
 
-    text += this.formatTicketsLive(table, forUserId, true) + '\n';
+    text += this.formatTicketsLive(table, forUserId, true, lang) + '\n';
     for (const p of table.players) {
       if (p.userId === forUserId) continue;
-      text += this.formatTicketsLive(table, p.userId, false) + '\n';
+      text += this.formatTicketsLive(table, p.userId, false, lang) + '\n';
     }
 
     return text;
   }
 
   endText(table, forUserId, winnerInfo, bank, prize) {
+    const lang = this.userManager.getLanguage(forUserId);
     const drawn = table.drawnNumbers.join(', ');
-    let text = `🎮 <b>Table #${table.id}</b> — RESULTS\n\n`;
+    let text = `🎮 <b>${t(lang, 'game.results_title')} #${table.id}</b>\n\n`;
 
     if (winnerInfo) {
-      text += `🏆 Winner: <b>${winnerInfo.player.username}</b>\n`;
-      text += `🎟 Winning ticket: ${winnerInfo.ticket.join(' • ')}\n`;
-      text += `💰 Pot: $${bank}\n`;
-      text += `➖ Commission 5%: $${Math.round(bank * COMMISSION * 100) / 100}\n`;
-      text += `💵 Payout: <b>$${prize}</b>\n\n`;
+      text += `${t(lang, 'game.winner_label')}: <b>${winnerInfo.player.username}</b>\n`;
+      text += `${t(lang, 'game.winning_ticket')}: ${winnerInfo.ticket.join(' • ')}\n`;
+      text += `${t(lang, 'game.pot_label')}: $${bank}\n`;
+      text += `${t(lang, 'game.commission')}: $${Math.round(bank * COMMISSION * 100) / 100}\n`;
+      text += `${t(lang, 'game.payout')}: <b>$${prize}</b>\n\n`;
       if (winnerInfo.player.userId === forUserId) {
-        text += `🎉 <b>Congratulations, you won!</b>\n\n`;
+        text += t(lang, 'game.you_won') + '\n\n';
       }
     } else {
-      text += '😔 No winner. Bets have been refunded.\n\n';
+      text += t(lang, 'game.no_winner') + '\n\n';
     }
 
-    text += `🔢 All numbers (${table.drawnNumbers.length}): ${drawn}\n\n`;
-    text += 'Tap «📋 Public tables» or «🎮 Create table» to play again.';
+    text += t(lang, 'game.all_numbers', { count: table.drawnNumbers.length, drawn }) + '\n\n';
+    text += t(lang, 'game.again_hint');
     return text;
   }
 
