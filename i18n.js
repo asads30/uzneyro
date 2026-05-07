@@ -34,19 +34,19 @@ const TRANSLATIONS = {
     // Инструкция
     'instruction.text':
       '📖 <b>Как играть в Лотерея Бот</b>\n\n' +
-      '🎮 <b>Об игре</b>\nЛотерея Бот — мультиплеерная лотерея, в которой за одним столом играют 2–6 игроков. ' +
+      '🎮 <b>Об игре</b>\nЛотерея Бот — мультиплеерная лотерея, в которой за одним столом играют 2–15 игроков. ' +
       'Каждый игрок покупает один или несколько билетов. Каждый билет — случайный набор из 5 чисел от 1 до 30.\n\n' +
       '🎯 <b>Как проходит раунд</b>\n' +
       '1. Создайте стол или присоединитесь к публичному/приватному.\n' +
       '2. Выберите ставку, число игроков и билетов.\n' +
       '3. Когда стол заполнен или создатель запускает игру, числа выпадают по одному каждые пару секунд.\n' +
-      '4. Первый игрок, у кого все 5 чисел в билете выпали, забирает весь банк (минус 5% комиссии).\n\n' +
+      '4. Первый игрок, у кого все 5 чисел в билете выпали, забирает весь банк (минус 10% комиссии).\n\n' +
       '💰 <b>Ставки и билеты</b>\n' +
       '• Быстрые ставки: $1, $5, $10 или любая своя сумма (целые доллары).\n' +
       '• Билетов на игрока: любое положительное число.\n' +
       '• Стоимость = ставка × билеты, списывается с баланса при входе.\n\n' +
       '🏆 <b>Призы</b>\n' +
-      '• Победитель получает банк минус 5% комиссии.\n' +
+      '• Победитель получает банк минус 10% комиссии.\n' +
       '• Если все числа кончились без победителя — все ставки возвращаются.\n\n' +
       '👥 <b>Рефералы</b>\n• Приглашайте друзей и получайте $0.05 за каждое успешное пополнение реферала.\n\n' +
       '📰 Следите за новостями в нашем канале!',
@@ -58,7 +58,7 @@ const TRANSLATIONS = {
     'ct.btn_other': '💵 Другая сумма',
     'ct.custom_bet_prompt':
       '💵 Введите свою ставку в целых долларах (положительное число, без копеек):',
-    'ct.step2': '🎮 Создание стола\n\nСтавка: <b>${bet}</b>\n\n2) Выберите число игроков (2–6):',
+    'ct.step2': '🎮 Создание стола\n\nСтавка: <b>${bet}</b>\n\n2) Выберите число игроков (2–15):',
     'ct.step3':
       '🎮 Создание стола\n\nСтавка: <b>${bet}</b>\nИгроков: <b>{max}</b>\n\n3) Выберите тип стола:',
     'ct.btn_public': '🌐 Публичный',
@@ -166,7 +166,7 @@ const TRANSLATIONS = {
     'game.results_title': 'РЕЗУЛЬТАТЫ',
     'game.winner_label': '🏆 Победитель',
     'game.winning_ticket': '🎟 Победный билет',
-    'game.commission': '➖ Комиссия 5%',
+    'game.commission': '➖ Комиссия 10%',
     'game.payout': '💵 Выплата',
     'game.you_won': '🎉 <b>Поздравляем, вы выиграли!</b>',
     'game.no_winner': '😔 Победителя нет. Ставки возвращены.',
@@ -212,18 +212,18 @@ const TRANSLATIONS = {
 
     'instruction.text':
       '📖 <b>Lotereya Bot qanday o‘ynaladi</b>\n\n' +
-      '🎮 <b>O‘yin haqida</b>\nLotereya Bot — bu 2–6 o‘yinchi bitta stolda raqobatlashadigan multiplayer lotereya. ' +
+      '🎮 <b>O‘yin haqida</b>\nLotereya Bot — bu 2–15 o‘yinchi bitta stolda raqobatlashadigan multiplayer lotereya. ' +
       'Har bir o‘yinchi bir yoki bir nechta chipta sotib oladi. Har bir chipta — 1 dan 30 gacha bo‘lgan 5 ta tasodifiy raqam.\n\n' +
       '🎯 <b>Raund qanday o‘tadi</b>\n' +
       '1. Stol yarating yoki ochiq/maxfiy stolga qo‘shiling.\n' +
       '2. Stavka, o‘yinchilar va chiptalar sonini tanlang.\n' +
       '3. Stol to‘lgach yoki yaratuvchi o‘yinni boshlagach, raqamlar har necha soniyada bittadan chiqadi.\n' +
-      '4. Chiptasidagi 5 raqami birinchi bo‘lib chiqqan o‘yinchi butun bankni oladi (5% komissiya chegirib).\n\n' +
+      '4. Chiptasidagi 5 raqami birinchi bo‘lib chiqqan o‘yinchi butun bankni oladi (10% komissiya chegirib).\n\n' +
       '💰 <b>Stavka va chiptalar</b>\n' +
       '• Tezkor stavkalar: $1, $5, $10 yoki istalgan miqdor (butun dollar).\n' +
       '• Bir o‘yinchi uchun chiptalar: istalgan musbat son.\n' +
       '• Narx = stavka × chiptalar, qo‘shilishda balansdan yechiladi.\n\n' +
-      '🏆 <b>Sovrinlar</b>\n• G‘olib bankni 5% komissiyadan tashqari oladi.\n• Agar raqamlar tugab, g‘olib bo‘lmasa — barcha stavkalar qaytariladi.\n\n' +
+      '🏆 <b>Sovrinlar</b>\n• G‘olib bankni 10% komissiyadan tashqari oladi.\n• Agar raqamlar tugab, g‘olib bo‘lmasa — barcha stavkalar qaytariladi.\n\n' +
       '👥 <b>Referallar</b>\n• Do‘stlaringizni taklif qiling va har bir muvaffaqiyatli to‘ldirish uchun $0.05 oling.\n\n' +
       '📰 Yangiliklar uchun kanalimizga obuna bo‘ling!',
     'instruction.channel': '📰 Kanalga obuna',
@@ -233,7 +233,7 @@ const TRANSLATIONS = {
     'ct.btn_other': '💵 Boshqa miqdor',
     'ct.custom_bet_prompt':
       '💵 Stavkani butun dollarda kiriting (musbat butun son, tiyinsiz):',
-    'ct.step2': '🎮 Stol yaratish\n\nStavka: <b>${bet}</b>\n\n2) O‘yinchilar sonini tanlang (2–6):',
+    'ct.step2': '🎮 Stol yaratish\n\nStavka: <b>${bet}</b>\n\n2) O‘yinchilar sonini tanlang (2–15):',
     'ct.step3':
       '🎮 Stol yaratish\n\nStavka: <b>${bet}</b>\nO‘yinchilar: <b>{max}</b>\n\n3) Stol turini tanlang:',
     'ct.btn_public': '🌐 Ochiq',
@@ -332,7 +332,7 @@ const TRANSLATIONS = {
     'game.results_title': 'NATIJALAR',
     'game.winner_label': '🏆 G‘olib',
     'game.winning_ticket': '🎟 G‘olib chipta',
-    'game.commission': '➖ Komissiya 5%',
+    'game.commission': '➖ Komissiya 10%',
     'game.payout': '💵 To‘lov',
     'game.you_won': '🎉 <b>Tabriklaymiz, siz yutdingiz!</b>',
     'game.no_winner': '😔 G‘olib yo‘q. Stavkalar qaytarildi.',
@@ -377,18 +377,18 @@ const TRANSLATIONS = {
 
     'instruction.text':
       '📖 <b>How to play Lottery Bot</b>\n\n' +
-      '🎮 <b>The game</b>\nLottery Bot is a multiplayer lottery where 2–6 players compete at one table. ' +
+      '🎮 <b>The game</b>\nLottery Bot is a multiplayer lottery where 2–15 players compete at one table. ' +
       'Every player buys one or more tickets. Each ticket is a random set of 5 numbers from 1 to 30.\n\n' +
       '🎯 <b>How a round works</b>\n' +
       '1. Create a table or join a public/private one.\n' +
       '2. Choose your bet, number of players and tickets.\n' +
       '3. When the table is full or the creator starts the game, numbers are drawn one by one every couple of seconds.\n' +
-      '4. The first player whose ticket has all 5 numbers drawn wins the whole pot (minus a small 5% commission).\n\n' +
+      '4. The first player whose ticket has all 5 numbers drawn wins the whole pot (minus a 10% commission).\n\n' +
       '💰 <b>Bets &amp; tickets</b>\n' +
       '• Quick bet options: $1, $5, $10, or any custom whole-dollar amount.\n' +
       '• Tickets per player: any positive integer.\n' +
       '• Cost = bet × tickets, deducted from your balance when joining.\n\n' +
-      '🏆 <b>Prizes</b>\n• Winner takes the pot minus 5% commission.\n• If the deck is exhausted with no winner, all bets are refunded.\n\n' +
+      '🏆 <b>Prizes</b>\n• Winner takes the pot minus 10% commission.\n• If the deck is exhausted with no winner, all bets are refunded.\n\n' +
       '👥 <b>Referrals</b>\n• Invite friends and earn $0.05 per successful deposit they make.\n\n' +
       '📰 Stay tuned to our channel for news and updates!',
     'instruction.channel': '📰 Follow the channel',
@@ -398,7 +398,7 @@ const TRANSLATIONS = {
     'ct.btn_other': '💵 Other amount',
     'ct.custom_bet_prompt':
       '💵 Enter your custom bet in whole dollars (positive integer, no cents):',
-    'ct.step2': '🎮 Create a table\n\nBet: <b>${bet}</b>\n\n2) Choose number of players (2–6):',
+    'ct.step2': '🎮 Create a table\n\nBet: <b>${bet}</b>\n\n2) Choose number of players (2–15):',
     'ct.step3':
       '🎮 Create a table\n\nBet: <b>${bet}</b>\nPlayers: <b>{max}</b>\n\n3) Choose table type:',
     'ct.btn_public': '🌐 Public',
@@ -497,7 +497,7 @@ const TRANSLATIONS = {
     'game.results_title': 'RESULTS',
     'game.winner_label': '🏆 Winner',
     'game.winning_ticket': '🎟 Winning ticket',
-    'game.commission': '➖ Commission 5%',
+    'game.commission': '➖ Commission 10%',
     'game.payout': '💵 Payout',
     'game.you_won': '🎉 <b>Congratulations, you won!</b>',
     'game.no_winner': '😔 No winner. Bets have been refunded.',
