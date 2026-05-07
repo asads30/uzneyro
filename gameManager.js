@@ -3,12 +3,12 @@ const { t } = require('./i18n');
 const MIN_BET = 1;
 const MAX_BET = 10000;
 const MIN_PLAYERS = 2;
-const MAX_PLAYERS = 6;
+const MAX_PLAYERS = 15;
 const MIN_TICKETS = 1;
 const MAX_TICKETS = 100;
 const NUMBERS_PER_TICKET = 5;
 const MAX_NUMBER = 30;
-const COMMISSION = 0.05;
+const COMMISSION = 0.10;
 const DRAW_INTERVAL_MS = 2000;
 
 class GameManager {

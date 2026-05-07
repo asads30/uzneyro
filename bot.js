@@ -101,7 +101,25 @@ function tableCreatePlayersKeyboard(bet) {
       Markup.button.callback('3', `ctp_${bet}_3`),
       Markup.button.callback('4', `ctp_${bet}_4`),
     ],
-    [Markup.button.callback('5', `ctp_${bet}_5`), Markup.button.callback('6', `ctp_${bet}_6`)],
+    [
+      Markup.button.callback('5', `ctp_${bet}_5`),
+      Markup.button.callback('6', `ctp_${bet}_6`),
+      Markup.button.callback('7', `ctp_${bet}_7`),
+    ],
+    [
+      Markup.button.callback('8', `ctp_${bet}_8`),
+      Markup.button.callback('9', `ctp_${bet}_9`),
+      Markup.button.callback('10', `ctp_${bet}_10`),
+    ],
+    [
+      Markup.button.callback('11', `ctp_${bet}_11`),
+      Markup.button.callback('12', `ctp_${bet}_12`),
+      Markup.button.callback('13', `ctp_${bet}_13`),
+    ],
+    [
+      Markup.button.callback('14', `ctp_${bet}_14`),
+      Markup.button.callback('15', `ctp_${bet}_15`),
+    ],
   ]);
 }
 
